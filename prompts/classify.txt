@@ -1,0 +1,45 @@
+You are triaging newly published work to find NEW METHODS FOR EVALUATING IMAGE MODELS.
+
+You will receive a JSON array of candidate items (papers, repos, or model/leaderboard
+reports). For EACH item, decide whether it contributes a way to MEASURE an image
+generation or image editing model.
+
+RELEVANT means the item introduces or substantially advances one of:
+  - a metric or score
+  - a benchmark or evaluation dataset
+  - an evaluation protocol or human-study methodology
+  - an automatic judge (VLM-as-judge, reward model, preference model)
+  - a leaderboard or a model report that publishes measured eval numbers
+
+NOT RELEVANT (be strict, most items are not relevant):
+  - a new generator/editor that merely reports scores on existing benchmarks
+  - training methods, architectures, samplers, distillation, acceleration
+  - work on video, 3D, audio, or text models UNLESS it also evaluates still images
+  - perception tasks (detection, segmentation, retrieval, medical imaging, robotics)
+    that are not about evaluating a generative image model
+  - survey papers that introduce no new measurement instrument
+
+Map each relevant item onto the dimensions in the taxonomy given to you as system
+context. Use the dimension names EXACTLY as written there. An item may span several.
+
+If an item measures something genuinely OUTSIDE the taxonomy, set "new_dimension"
+with a short name and a one-line definition. Use this sparingly and only when no
+existing dimension fits — do not propose a synonym or a narrower special case of an
+existing dimension. Otherwise set it to null.
+
+Return ONLY a JSON array, no prose, no markdown fence. One object per input item,
+in the same order, with exactly these keys:
+
+[{"key":"<copy the input key verbatim>",
+  "relevant":true|false,
+  "type":"metric|benchmark|dataset|protocol|judge-model|leaderboard|model-report",
+  "dimensions":["<exact taxonomy name>", ...],
+  "new_dimension":{"name":"...","definition":"..."}|null,
+  "one_line":"<what it measures and how, max 25 words>",
+  "why_it_matters":"<why this is worth knowing, max 25 words>",
+  "confidence":0.0}]
+
+For items where relevant is false, set type to "metric", dimensions to [],
+new_dimension to null, and keep one_line/why_it_matters to a brief reason.
+
+CANDIDATES:

@@ -1,0 +1,715 @@
+{
+  "name": "Image-Eval Radar",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "Daily 8am",
+      "name": "Daily 8am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -880,
+        400
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "On demand",
+      "name": "On demand",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -880,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { lookbackHours: 36, mode: 'scheduled' } }];"
+      },
+      "id": "Mode: scheduled",
+      "name": "Mode: scheduled",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lookback comes from the trigger path: 36h for the daily run (generous on purpose \u2014\n// dedupe makes overlap harmless, a gap is not), or whatever an on-demand command asked for.\nconst cfg = $input.first().json || {};\nconst hours = Math.min(Math.max(Number(cfg.lookbackHours) || 36, 1), 24 * 30);\nconst now = new Date();\nconst from = new Date(now.getTime() - hours * 3600 * 1000);\nconst pad = n => String(n).padStart(2, '0');\nconst stamp = d => `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}`;\nconst ymd = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;\nreturn [{ json: {\n  arxivFrom: stamp(from),\n  arxivTo: stamp(now),\n  ghSince: ymd(from),\n  today: ymd(now),\n  yesterday: ymd(new Date(now.getTime() - 86400000)),\n  runDate: ymd(now),\n  lookbackHours: hours,\n  mode: cfg.mode === 'ondemand' ? 'ondemand' : 'scheduled',\n  commandText: cfg.commandText || '',\n}}];"
+      },
+      "id": "Window",
+      "name": "Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const w = $input.first().json;\nconst cats = ['cs.CV', 'cs.AI', 'cs.LG', 'cs.CL'];\nconst terms = '(abs:%22benchmark%22+OR+abs:%22evaluation%22+OR+abs:%22metric%22+OR+abs:%22judge%22+OR+abs:%22human+preference%22)';\n// NOTE: https is required (plain http 301s and returns zero bytes) and the\n// date-range brackets must be percent-encoded as %5B / %5D.\nreturn cats.map(c => ({ json: {\n  mode: w.mode, lookbackHours: w.lookbackHours, commandText: w.commandText,\n  url: `https://export.arxiv.org/api/query?search_query=cat:${c}+AND+submittedDate:%5B${w.arxivFrom}+TO+${w.arxivTo}%5D+AND+${terms}&sortBy=submittedDate&sortOrder=descending&max_results=100`,\n  category: c,\n}}));"
+      },
+      "id": "arXiv queries",
+      "name": "arXiv queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 3000
+            }
+          }
+        }
+      },
+      "id": "arXiv fetch",
+      "name": "arXiv fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const item of $input.all()) {\n  const xml = typeof item.json.data === 'string' ? item.json.data : (item.json.body || '');\n  for (const e of xml.split('<entry>').slice(1)) {\n    const g = re => { const m = e.match(re); return m ? m[1].trim().replace(/\\s+/g, ' ') : ''; };\n    const id = g(/<id>([\\s\\S]*?)<\\/id>/);\n    const bare = id.split('/abs/')[1];\n    if (!bare) continue;\n    out.push({ json: {\n      key: 'arxiv:' + bare.replace(/v\\d+$/, ''),\n      source: 'arXiv',\n      title: g(/<title>([\\s\\S]*?)<\\/title>/),\n      abstract: g(/<summary>([\\s\\S]*?)<\\/summary>/),\n      url: id,\n      date: g(/<published>([\\s\\S]*?)<\\/published>/).slice(0, 10),\n    }});\n  }\n}\nreturn out;"
+      },
+      "id": "arXiv parse",
+      "name": "arXiv parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const w = $input.first().json;\n// Curation date lags publication, so poll today and yesterday.\nreturn [w.today, w.yesterday].map(d => ({ json: {\n  url: `https://huggingface.co/api/daily_papers?date=${d}`,\n}}));"
+      },
+      "id": "HF queries",
+      "name": "HF queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "id": "HF fetch",
+      "name": "HF fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const list = Array.isArray(j) ? j : (Array.isArray(j.data) ? j.data : [j]);\n  for (const p of list) {\n    const pa = (p && p.paper) || p;\n    if (!pa || !pa.id) continue;\n    out.push({ json: {\n      key: 'arxiv:' + String(pa.id).replace(/v\\d+$/, ''),\n      source: 'HF',\n      title: String(pa.title || '').replace(/\\s+/g, ' ').trim(),\n      abstract: String(pa.summary || '').replace(/\\s+/g, ' ').trim(),\n      url: 'https://huggingface.co/papers/' + pa.id,\n      date: String(pa.publishedAt || '').slice(0, 10),\n    }});\n  }\n}\nreturn out;"
+      },
+      "id": "HF parse",
+      "name": "HF parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const w = $input.first().json;\n// GitHub ANDs every term, so one broad query returns almost nothing.\n// Five narrow queries instead. Unauthenticated search allows 10 req/min.\nconst qs = [\n  'text-to-image evaluation',\n  'image generation benchmark',\n  'topic:text-to-image topic:benchmark',\n  'image editing benchmark',\n  'VLM judge image',\n];\nreturn qs.map(q => ({ json: {\n  url: 'https://api.github.com/search/repositories?q='\n     + encodeURIComponent(q + ' created:>' + w.ghSince)\n     + '&sort=stars&order=desc&per_page=20',\n}}));"
+      },
+      "id": "GitHub queries",
+      "name": "GitHub queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "image-eval-radar"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 7000
+            }
+          }
+        }
+      },
+      "id": "GitHub fetch",
+      "name": "GitHub fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json && item.json.items) || []) {\n    out.push({ json: {\n      key: 'gh:' + r.full_name,\n      source: 'GitHub',\n      title: r.full_name,\n      abstract: r.description || '',\n      url: r.html_url,\n      date: String(r.created_at || '').slice(0, 10),\n    }});\n  }\n}\nreturn out;"
+      },
+      "id": "GitHub parse",
+      "name": "GitHub parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "Merge sources",
+      "name": "Merge sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        220,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tuned against a real 4-day arXiv window + one HF day (132 records):\n//   bare \"image\" + loose eval terms   -> 66/132 kept (robotics, surgical segmentation survive)\n//   this pair                         ->  9/132 kept, real hits retained\n//   requiring the eval term in title  ->  2/132 kept (too aggressive)\n// GEN deliberately excludes bare \"image\" \u2014 it matches every vision paper.\n// The classifier is still the precision stage; this just stops paying for obvious noise.\nconst IMG  = /(text-to-image|\\bt2i\\b|image generation|image editing|image synthesis|image generative|diffusion model|inpaint|visual generation|generated image|synthesized image|image generator)/i;\nconst EVAL = /(benchmark|metric|leaderboard|judge|human preference|rubric|evaluation (suite|protocol|framework|benchmark)|evaluating|we evaluate the)/i;\nconst seen = new Set();\nconst out = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  if (!j || !j.key || seen.has(j.key)) continue;\n  seen.add(j.key);\n  const blob = `${j.title || ''} ${j.abstract || ''}`;\n  if (!IMG.test(blob) || !EVAL.test(blob)) continue;\n  out.push({ json: j });\n}\nreturn out;"
+      },
+      "id": "Keyword prefilter",
+      "name": "Keyword prefilter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $env.NOTION_EVAL_DB_ID }}/query",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"page_size\": 100, \"sorts\": [{\"property\": \"Date\", \"direction\": \"descending\"}]}",
+        "options": {}
+      },
+      "id": "Notion: recent keys",
+      "name": "Notion: recent keys",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        280
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sKlDDC8SBcWishAf",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Main input is the single Notion query result; candidates come from the\n// prefilter node by reference.\nconst res = ($input.first().json && $input.first().json.results) || [];\nconst seen = new Set();\nfor (const page of res) {\n  const t = page.properties && page.properties.Key\n         && page.properties.Key.rich_text && page.properties.Key.rich_text[0];\n  if (t && t.plain_text) seen.add(t.plain_text);\n}\n\nconst mode = ($('Window').first().json || {}).mode || 'scheduled';\nconst cands = $('Keyword prefilter').all();\n\n// Scheduled: only unseen items are worth classifying at all.\n// On-demand (\"past 3 days\"): the user asked what is IN that window, so show\n// everything and just remember which rows are already archived.\nconst out = [];\nfor (const c of cands) {\n  const already = seen.has(c.json.key);\n  if (mode !== 'ondemand' && already) continue;\n  out.push({ json: { ...c.json, alreadySeen: already, mode } });\n}\n// Bound the cost of a wide on-demand query.\nreturn mode === 'ondemand' ? out.slice(0, 40) : out;"
+      },
+      "id": "Drop already sent",
+      "name": "Drop already sent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Batches of 10. After the tuned prefilter this is ~1 call/day, and it stays\n// bounded if a busy day pushes the candidate count up.\nconst items = $input.all().map(i => i.json);\nconst SIZE = 10;\nconst out = [];\nfor (let i = 0; i < items.length; i += SIZE) {\n  const batch = items.slice(i, i + SIZE).map(r => ({\n    key: r.key,\n    title: r.title,\n    abstract: String(r.abstract || '').slice(0, 1200),\n  }));\n  out.push({ json: {\n    batchIndex: out.length,\n    count: batch.length,\n    payload: Buffer.from(JSON.stringify(batch, null, 1)).toString('base64'),\n  }});\n}\nreturn out;"
+      },
+      "id": "Batch for Claude",
+      "name": "Batch for Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=TAX=$(cat /image-eval-radar/dimensions.md); PROMPT=$(cat /image-eval-radar/prompts/classify.txt); printf '%s' \"{{ $json.payload }}\" | base64 -d > /tmp/eval-batch.json; { printf '%s\\n' \"$PROMPT\"; cat /tmp/eval-batch.json; } | /usr/local/bin/claude -p --model claude-haiku-4-5 --append-system-prompt \"$TAX\""
+      },
+      "id": "Claude: classify",
+      "name": "Claude: classify",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        280
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The container authenticates the Claude CLI over OAuth, and OAuth tokens can be\n// revoked out from under it (this has already happened once). A revoked token would\n// otherwise look identical to \"quiet news day\", so detect it and shout instead.\nconst AUTH_FAIL = /failed to authenticate|oauth .*(revoked|expired)|invalid api key|authentication_error|401/i;\n\nconst out = [];\nlet authError = null;\nfor (const it of $input.all()) {\n  const j = it.json || {};\n  const txt = String(j.stdout || '').trim();\n  const err = String(j.stderr || '').trim();\n\n  if (AUTH_FAIL.test(txt) || AUTH_FAIL.test(err)) {\n    authError = (err || txt).split('\\n')[0].slice(0, 300);\n    continue;\n  }\n\n  const s = txt.indexOf('[');\n  const e = txt.lastIndexOf(']');\n  if (s === -1 || e === -1 || e <= s) continue;   // batch-level skip, not a run failure\n  let arr;\n  try { arr = JSON.parse(txt.slice(s, e + 1)); } catch (err2) { continue; }\n  if (!Array.isArray(arr)) continue;\n  for (const r of arr) if (r && r.key) out.push({ json: r });\n}\n\nif (authError && !out.length) return [{ json: { __authError: authError } }];\nreturn out;"
+      },
+      "id": "Parse classifications",
+      "name": "Parse classifications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Propagate an auth failure straight through to the digest.\nconst first = $input.first();\nif (first && first.json && first.json.__authError) {\n  return [{ json: { authError: first.json.__authError, empty: true } }];\n}\n\nconst byKey = {};\nfor (const c of $('Drop already sent').all()) byKey[c.json.key] = c.json;\n\nconst out = [];\nfor (const it of $input.all()) {\n  const r = it.json;\n  if (!r || r.relevant !== true) continue;\n  const src = byKey[r.key] || {};\n  const nd = r.new_dimension && r.new_dimension.name ? r.new_dimension : null;\n  out.push({ json: {\n    key: r.key,\n    title: src.title || r.key,\n    url: src.url || '',\n    date: src.date || '',\n    source: src.source || '',\n    type: r.type || 'metric',\n    alreadySeen: src.alreadySeen === true,\n    dimensions: Array.isArray(r.dimensions) ? r.dimensions.filter(Boolean) : [],\n    newDimension: nd,\n    oneLine: r.one_line || '',\n    why: r.why_it_matters || '',\n    confidence: typeof r.confidence === 'number' ? r.confidence : 0,\n  }});\n}\n// Always emit something so the digest still fires (and silence always means breakage).\nreturn out.length ? out : [{ json: { empty: true } }];"
+      },
+      "id": "Keep relevant",
+      "name": "Keep relevant",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Never re-write a row that is already archived \u2014 an on-demand query\n// re-surfaces old items on purpose, but must not duplicate them.\nreturn $input.all().filter(i => !i.json.empty && !i.json.alreadySeen);"
+      },
+      "id": "Only real hits",
+      "name": "Only real hits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  parent: { database_id: $env.NOTION_EVAL_DB_ID },\n  properties: {\n    Name:        { title: [{ text: { content: $json.title.slice(0,200) } }] },\n    Key:         { rich_text: [{ text: { content: $json.key } }] },\n    Source:      { select: { name: $json.source || 'arXiv' } },\n    Date:        $json.date ? { date: { start: $json.date } } : { date: null },\n    Type:        { select: { name: $json.type } },\n    Dimensions:  { multi_select: $json.dimensions.map(d => ({ name: d })) },\n    'Proposed Dimension': { rich_text: $json.newDimension\n        ? [{ text: { content: $json.newDimension.name + ' \u2014 ' + $json.newDimension.definition } }] : [] },\n    Summary:     { rich_text: [{ text: { content: $json.oneLine.slice(0,1900) } }] },\n    'Why it matters': { rich_text: [{ text: { content: $json.why.slice(0,1900) } }] },\n    Confidence:  { number: $json.confidence },\n    URL:         { url: $json.url || null },\n    Status:      { select: { name: $json.newDimension ? 'proposed-dimension' : 'sent' } }\n  }\n}) }}",
+        "options": {}
+      },
+      "id": "Notion: write row",
+      "name": "Notion: write row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        160
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sKlDDC8SBcWishAf",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// HTML, not MarkdownV2: MarkdownV2 needs 18 characters escaped and paper titles\n// are full of them. HTML needs only & < >.\nconst esc = s => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst all = $input.all().map(i => i.json).filter(Boolean);\nconst today = new Date().toISOString().slice(0, 10);\n\nconst auth = all.find(r => r.authError);\nif (auth) {\n  return [{ json: { text:\n      `\u26a0\ufe0f <b>Image-Eval Radar \u2014 ${today}</b>\\n`\n    + `<b>The Claude CLI in the container is not authenticated.</b>\\n`\n    + `<code>${esc(auth.authError)}</code>\\n\\n`\n    + `Nothing was classified today. Fix with:\\n`\n    + `<code>docker exec -it n8n-claude-n8n-1 claude</code>  then  <code>/login</code>\\n\\n`\n    + `<i>Note: this also breaks the job-scoring and yellow card workflows.</i>` } }];\n}\n\nconst rows = all.filter(r => !r.empty);\n\n// Label the window so an on-demand answer is self-describing.\nlet win;\ntry {\n  const w = $('Window').first().json || {};\n  if (w.mode === 'ondemand') {\n    const h = Number(w.lookbackHours) || 24;\n    win = h % 24 === 0 && h >= 24 ? `past ${h / 24} day${h === 24 ? '' : 's'}` : `past ${h}h`;\n  }\n} catch (e) { /* Window not reachable in a partial run */ }\nconst title = win ? `Image-Eval Radar \u2014 ${win}` : `Image-Eval Radar \u2014 ${today}`;\n\nif (!rows.length) {\n  return [{ json: { text: `<b>Image-Eval Radar \u2014 ${today}</b>\\nNo new eval methods today.` } }];\n}\n\nconst msgs = [];\nlet header = `<b>${title}</b>\\n${rows.length} item${rows.length > 1 ? 's' : ''}`;\n\nconst newDims = rows.filter(r => r.newDimension);\nif (newDims.length) {\n  header += `\\n\\n\ud83c\udd95 <b>NEW DIMENSION PROPOSED</b>`;\n  for (const r of newDims) {\n    header += `\\n\u2022 <b>${esc(r.newDimension.name)}</b> \u2014 ${esc(r.newDimension.definition)}`\n            + `\\n  from <a href=\"${esc(r.url)}\">${esc(r.title)}</a>`;\n  }\n  header += `\\n<i>Not added to the taxonomy \u2014 approve it in dimensions.md first.</i>`;\n}\nconst groups = {};\nfor (const r of rows) {\n  const dims = r.dimensions.length ? r.dimensions : ['unmapped'];\n  for (const d of dims) (groups[d] = groups[d] || []).push(r);\n}\n\n// A paper is cross-listed under every dimension it touches, which is the point \u2014\n// but printing it in full each time triples the digest. Full entry on first\n// appearance, one-liner back-reference after that.\nconst shown = new Set();\nconst blocks = [];\nfor (const dim of Object.keys(groups)) {\n  let block = `\\n\\n<b>${esc(dim)}</b>`;\n  for (const r of groups[dim]) {\n    const link = `<a href=\"${esc(r.url)}\">${esc(r.title)}</a>`;\n    if (shown.has(r.key)) {\n      block += `\\n\u2022 ${link} <i>(above)</i>`;\n    } else {\n      shown.add(r.key);\n      block += `\\n\u2022 ${link}  <i>[${esc(r.type)} \u00b7 ${esc(r.source)}]</i>`\n             + `\\n  ${esc(r.oneLine)}`\n             + `\\n  <i>${esc(r.why)}</i>`;\n    }\n  }\n  blocks.push(block);\n}\n\n// Pack blocks into as few messages as Telegram's 4096 cap allows.\nconst LIMIT = 3800;\nlet cur = header;\nfor (const b of blocks) {\n  if (cur.length + b.length > LIMIT) { msgs.push(cur); cur = b.replace(/^\\n\\n/, ''); }\n  else { cur += b; }\n}\nmsgs.push(cur);\n\n// Last resort: a single block bigger than the cap still has to be split.\nconst final = [];\nfor (let m of msgs) {\n  while (m.length > LIMIT) { final.push(m.slice(0, LIMIT)); m = m.slice(LIMIT); }\n  if (m.trim()) final.push(m);\n}\nreturn final.map(t => ({ json: { text: t } }));"
+      },
+      "id": "Format digest",
+      "name": "Format digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_EVAL_CHAT_ID }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true,
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "4upNbI1QSPqIcciI",
+          "name": "Telegram \u2014 Image Eval Radar"
+        }
+      },
+      "id": "Telegram: digest",
+      "name": "Telegram: digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2200,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 8am": {
+      "main": [
+        [
+          {
+            "node": "Mode: scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mode: scheduled": {
+      "main": [
+        [
+          {
+            "node": "Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On demand": {
+      "main": [
+        [
+          {
+            "node": "Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window": {
+      "main": [
+        [
+          {
+            "node": "arXiv queries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HF queries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "arXiv queries": {
+      "main": [
+        [
+          {
+            "node": "arXiv fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "arXiv fetch": {
+      "main": [
+        [
+          {
+            "node": "arXiv parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "arXiv parse": {
+      "main": [
+        [
+          {
+            "node": "Merge sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HF queries": {
+      "main": [
+        [
+          {
+            "node": "HF fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HF fetch": {
+      "main": [
+        [
+          {
+            "node": "HF parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HF parse": {
+      "main": [
+        [
+          {
+            "node": "Merge sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "GitHub queries": {
+      "main": [
+        [
+          {
+            "node": "GitHub fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub fetch": {
+      "main": [
+        [
+          {
+            "node": "GitHub parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub parse": {
+      "main": [
+        [
+          {
+            "node": "Merge sources",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge sources": {
+      "main": [
+        [
+          {
+            "node": "Keyword prefilter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keyword prefilter": {
+      "main": [
+        [
+          {
+            "node": "Notion: recent keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion: recent keys": {
+      "main": [
+        [
+          {
+            "node": "Drop already sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop already sent": {
+      "main": [
+        [
+          {
+            "node": "Batch for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch for Claude": {
+      "main": [
+        [
+          {
+            "node": "Claude: classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: classify": {
+      "main": [
+        [
+          {
+            "node": "Parse classifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse classifications": {
+      "main": [
+        [
+          {
+            "node": "Keep relevant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep relevant": {
+      "main": [
+        [
+          {
+            "node": "Only real hits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Format digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only real hits": {
+      "main": [
+        [
+          {
+            "node": "Notion: write row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format digest": {
+      "main": [
+        [
+          {
+            "node": "Telegram: digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Toronto"
+  },
+  "tags": []
+}

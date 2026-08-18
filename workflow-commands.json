@@ -1,0 +1,167 @@
+{
+  "name": "Image-Eval Radar \u2014 Commands",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "Every minute",
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// getUpdates is consume-once: acknowledge everything we have already read.\n// Static data persists only on active workflows \u2014 which this one is.\nconst sd = $getWorkflowStaticData('global');\nreturn [{ json: { offset: (sd.tgOffset || 0) + 1 } }];"
+      },
+      "id": "Next offset",
+      "name": "Next offset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getUpdates?offset={{ $json.offset }}&timeout=0&allowed_updates=[\"channel_post\",\"message\"]",
+        "options": {}
+      },
+      "id": "Telegram: getUpdates",
+      "name": "Telegram: getUpdates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nconst res = ($input.first().json && $input.first().json.result) || [];\n\n// \"past 24h\" | \"past 3 days\" | \"past 2 weeks\"\nconst RE = /^\\s*past\\s+(\\d+)\\s*(h|hr|hrs|hour|hours|d|day|days|w|week|weeks)\\s*$/i;\n\nlet maxId = sd.tgOffset || 0;\nconst found = [];\nfor (const u of res) {\n  if (u.update_id > maxId) maxId = u.update_id;\n  const post = u.channel_post || u.message;\n  const text = post && post.text;\n  if (!text) continue;\n  const m = String(text).match(RE);\n  if (!m) continue;\n  const n = parseInt(m[1], 10);\n  const unit = m[2].toLowerCase()[0];\n  const hours = unit === 'h' ? n : unit === 'd' ? n * 24 : n * 24 * 7;\n  found.push({ json: {\n    lookbackHours: Math.min(Math.max(hours, 1), 24 * 30),   // clamp 1h .. 30d\n    mode: 'ondemand',\n    commandText: String(text).trim(),\n  }});\n}\n\n// Mark everything consumed even when no command matched, so a chatty channel\n// does not make us re-scan the same updates forever.\nsd.tgOffset = maxId;\n\n// One run per poll: if several commands arrived, honour the newest.\nreturn found.slice(-1);"
+      },
+      "id": "Parse command",
+      "name": "Parse command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_EVAL_CHAT_ID }}",
+        "text": "=\ud83d\udd0e Working on <b>{{ $json.commandText }}</b> \u2014 this takes a minute or two.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true,
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "4upNbI1QSPqIcciI",
+          "name": "Telegram \u2014 Image Eval Radar"
+        }
+      },
+      "id": "Ack",
+      "name": "Ack",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "uE6T4jkDsGiqt5LW",
+          "mode": "id"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "Run radar",
+      "name": "Run radar",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Every minute": {
+      "main": [
+        [
+          {
+            "node": "Next offset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next offset": {
+      "main": [
+        [
+          {
+            "node": "Telegram: getUpdates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: getUpdates": {
+      "main": [
+        [
+          {
+            "node": "Parse command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse command": {
+      "main": [
+        [
+          {
+            "node": "Ack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Run radar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Toronto"
+  },
+  "tags": []
+}

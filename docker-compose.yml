@@ -1,0 +1,27 @@
+services:
+  n8n:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      GENERIC_TIMEZONE: "America/Toronto"
+      TZ: "America/Toronto"
+      NODES_EXCLUDE: "[]"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      CLAUDE_CONFIG_DIR: "/home/node/.claude"
+      CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN}"
+      NOTION_DB_ID: "${NOTION_DB_ID}"
+      NOTION_EVAL_DB_ID: "${NOTION_EVAL_DB_ID}"
+      TELEGRAM_EVAL_CHAT_ID: "${TELEGRAM_EVAL_CHAT_ID}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      AA_API_KEY: "${AA_API_KEY}"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - claude_data:/home/node/.claude
+      - ${HOME}/job-automation:/job-automation:ro
+      - ${HOME}/image-eval-radar:/image-eval-radar:ro
+
+volumes:
+  n8n_data:
+  claude_data:

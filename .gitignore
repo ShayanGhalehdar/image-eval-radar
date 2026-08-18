@@ -1,0 +1,10 @@
+# Secrets — never commit
+.env
+*.token
+.notion-token
+
+# Local scratch
+*.sqlite
+*.sqlite-*
+__pycache__/
+.DS_Store
