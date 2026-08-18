@@ -307,6 +307,7 @@
     },
     {
       "parameters": {
+        "executeOnce": false,
         "command": "=TAX=$(cat /image-eval-radar/dimensions.md); PROMPT=$(cat /image-eval-radar/prompts/classify.txt); printf '%s' \"{{ $json.payload }}\" | base64 -d > /tmp/eval-batch.json; { printf '%s\\n' \"$PROMPT\"; cat /tmp/eval-batch.json; } | /usr/local/bin/claude -p --model claude-haiku-4-5 --append-system-prompt \"$TAX\""
       },
       "id": "Claude: classify",

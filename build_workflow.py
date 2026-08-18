@@ -483,7 +483,12 @@ nodes = [
     code("Drop already sent", DROP_SEEN, 880, 280),
     code("Batch for Claude", BATCH, 1100, 280),
 
-    {"parameters": {"command":
+    # executeOnce is a PARAMETER of this node (distinct from the generic node-level
+    # setting) and it DEFAULTS TO TRUE, silently truncating input to items[0].
+    # With 6 batches queued that classified only the first 10 candidates and threw
+    # the rest away. Invisible on the 36h run, which only ever makes one batch.
+    {"parameters": {"executeOnce": False,
+                    "command":
         "=TAX=$(cat /image-eval-radar/dimensions.md); "
         "PROMPT=$(cat /image-eval-radar/prompts/classify.txt); "
         "printf '%s' \"{{ $json.payload }}\" | base64 -d > /tmp/eval-batch.json; "
@@ -660,7 +665,7 @@ cmd_nodes = [
     code("Parse command", PARSE_CMD, 60, 300),
 
     {"parameters": {"chatId": "={{ $env.TELEGRAM_EVAL_CHAT_ID }}",
-                    "text": "=\U0001F50E Working on <b>{{ $json.commandText }}</b> — this takes a minute or two.",
+                    "text": "=\U0001F50E Working on <b>{{ $json.commandText }}</b>\u2026\n<i>A day or two takes about a minute; a wide window can take several, since it classifies in batches.</i>",
                     "additionalFields": {"parse_mode": "HTML",
                                          "disable_web_page_preview": True,
                                          "appendAttribution": False}},

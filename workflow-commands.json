@@ -64,7 +64,7 @@
     {
       "parameters": {
         "chatId": "={{ $env.TELEGRAM_EVAL_CHAT_ID }}",
-        "text": "=\ud83d\udd0e Working on <b>{{ $json.commandText }}</b> \u2014 this takes a minute or two.",
+        "text": "=\ud83d\udd0e Working on <b>{{ $json.commandText }}</b>\u2026\n<i>A day or two takes about a minute; a wide window can take several, since it classifies in batches.</i>",
         "additionalFields": {
           "parse_mode": "HTML",
           "disable_web_page_preview": true,
