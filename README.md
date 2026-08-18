@@ -142,6 +142,41 @@ The listener needs the bot token to call `getUpdates`:
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Bot token for `shayan_image_eval_radar_bot`, used only for polling |
 
+## n8n gotchas this project hit
+
+All of these produced **well-formed, plausible output that was quietly missing data** —
+nothing errored, nothing looked broken. Worth knowing before editing the workflow.
+
+**`ExecuteCommand` has its own `executeOnce` parameter, and it defaults to `true`.**
+From the node source: `if (executeOnce) { items = [items[0]] }`. It is a *node parameter*,
+separate from the generic node-level setting of the same name. With 60 candidates split
+into 6 batches, it classified the first 10 and discarded the rest. `build_workflow.py`
+sets `"executeOnce": False` explicitly — do not remove it.
+
+**The generic node-level `executeOnce` also truncates to the first item.** It does not mean
+"run once over all items"; Code nodes already do that by default. Setting it on the digest
+node made it report 1 of 3 papers.
+
+**Neither bug appears on the 36h daily run,** which only ever produces one batch. Only wide
+on-demand windows expose them. Test window changes with `past 10 days`, not `past 24h`.
+
+**arXiv caps each response at `max_results` and sorts newest-first.** A single 100-result
+page reached back only about two days — a 10-day `cs.CV` window matches 576 papers. The
+query node pages, scaling page count with the window.
+
+**n8n blocks `$env` in expressions by default.** Needs `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`.
+
+**IF nodes apply strict type validation to `rightValue`** and reject `''`/undefined against
+a boolean operator. Replaced with a Code node that filters — no type checking at all.
+
+**On import, n8n auto-binds an arbitrary existing credential of the right type,** and
+importing *as new* reassigns workflow ids. Once, that left `Run radar` pointing at the
+listener itself — an infinite self-call. Credential ids are pinned in the generator;
+re-check `MAIN_WORKFLOW_ID` after any import-as-new.
+
+**A Telegram node outputs its API response, not the item it received.** Chaining work after
+one drops your payload; branch in parallel from the node that produced the data.
+
 ## Source notes (learned the hard way)
 
 - **arXiv needs `https`.** Plain `http` 301s and returns zero bytes. Date-range brackets
