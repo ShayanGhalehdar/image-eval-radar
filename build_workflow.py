@@ -44,13 +44,29 @@ ARXIV_Q = r"""
 const w = $input.first().json;
 const cats = ['cs.CV', 'cs.AI', 'cs.LG', 'cs.CL'];
 const terms = '(abs:%22benchmark%22+OR+abs:%22evaluation%22+OR+abs:%22metric%22+OR+abs:%22judge%22+OR+abs:%22human+preference%22)';
+
+// arXiv caps each response at max_results and sorts newest-first, so a single
+// 100-result page only reaches back a day or two. Measured: a 10-day window in
+// cs.CV alone matches 576 papers, of which one page covered just 2 days — so
+// "past 10 days" silently behaved like "past 2 days". Page count scales with
+// the requested window.
 // NOTE: https is required (plain http 301s and returns zero bytes) and the
 // date-range brackets must be percent-encoded as %5B / %5D.
-return cats.map(c => ({ json: {
-  mode: w.mode, lookbackHours: w.lookbackHours, commandText: w.commandText,
-  url: `https://export.arxiv.org/api/query?search_query=cat:${c}+AND+submittedDate:%5B${w.arxivFrom}+TO+${w.arxivTo}%5D+AND+${terms}&sortBy=submittedDate&sortOrder=descending&max_results=100`,
-  category: c,
-}}));
+const PAGE  = 200;
+const pages = Math.min(Math.max(Math.ceil((w.lookbackHours || 36) / 48), 1), 5);
+
+const out = [];
+for (const c of cats) {
+  for (let p = 0; p < pages; p++) {
+    out.push({ json: {
+      mode: w.mode, lookbackHours: w.lookbackHours, commandText: w.commandText,
+      category: c, page: p,
+      url: `https://export.arxiv.org/api/query?search_query=cat:${c}+AND+submittedDate:%5B${w.arxivFrom}+TO+${w.arxivTo}%5D+AND+${terms}`
+         + `&sortBy=submittedDate&sortOrder=descending&start=${p * PAGE}&max_results=${PAGE}`,
+    }});
+  }
+}
+return out;
 """
 
 ARXIV_PARSE = r"""
@@ -77,10 +93,20 @@ return out;
 
 HF_Q = r"""
 const w = $input.first().json;
-// Curation date lags publication, so poll today and yesterday.
-return [w.today, w.yesterday].map(d => ({ json: {
-  url: `https://huggingface.co/api/daily_papers?date=${d}`,
-}}));
+// Curation date lags publication, so always cover one extra day. For a wide
+// on-demand window poll every day in it — only ever polling two days was the
+// other reason "past 10 days" returned almost nothing.
+const days = Math.min(Math.max(Math.ceil((w.lookbackHours || 36) / 24) + 1, 2), 14);
+const pad = n => String(n).padStart(2, '0');
+
+const out = [];
+for (let i = 0; i < days; i++) {
+  const d = new Date(Date.now() - i * 86400000);
+  out.push({ json: {
+    url: `https://huggingface.co/api/daily_papers?date=${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`,
+  }});
+}
+return out;
 """
 
 HF_PARSE = r"""
@@ -185,7 +211,7 @@ for (const c of cands) {
   out.push({ json: { ...c.json, alreadySeen: already, mode } });
 }
 // Bound the cost of a wide on-demand query.
-return mode === 'ondemand' ? out.slice(0, 40) : out;
+return mode === 'ondemand' ? out.slice(0, 60) : out;
 """
 
 BATCH = r"""
