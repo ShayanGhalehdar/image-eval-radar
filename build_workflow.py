@@ -12,8 +12,8 @@ import json, os
 OUT = os.path.expanduser("~/image-eval-radar/workflow.json")
 
 # Existing n8n credentials, bound by id so a re-import stays wired up.
-NOTION_CRED   = {"httpHeaderAuth": {"id": "sKlDDC8SBcWishAf", "name": "Notion API"}}
-TELEGRAM_CRED = {"telegramApi":    {"id": "4upNbI1QSPqIcciI", "name": "Telegram \u2014 Image Eval Radar"}}
+NOTION_CRED   = {"httpHeaderAuth": {"id": "REPLACE_WITH_NOTION_CREDENTIAL_ID", "name": "Notion API"}}
+TELEGRAM_CRED = {"telegramApi":    {"id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID", "name": "Telegram \u2014 Image Eval Radar"}}
 
 # ---------------------------------------------------------------- code nodes
 
@@ -607,7 +607,7 @@ CMD_OUT = os.path.expanduser("~/image-eval-radar/workflow-commands.json")
 # NOTE: this is the *radar* workflow id. Importing a workflow as new reassigns ids —
 # after any re-import, re-check this against the actual "Image-Eval Radar" id or the
 # listener can end up calling itself in an infinite loop.
-MAIN_WORKFLOW_ID = "uE6T4jkDsGiqt5LW"
+MAIN_WORKFLOW_ID = "REPLACE_WITH_RADAR_WORKFLOW_ID"
 
 NEXT_OFFSET = r"""
 // getUpdates is consume-once: acknowledge everything we have already read.

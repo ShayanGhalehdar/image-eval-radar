@@ -73,7 +73,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "4upNbI1QSPqIcciI",
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
           "name": "Telegram \u2014 Image Eval Radar"
         }
       },
@@ -90,7 +90,7 @@
       "parameters": {
         "workflowId": {
           "__rl": true,
-          "value": "uE6T4jkDsGiqt5LW",
+          "value": "REPLACE_WITH_RADAR_WORKFLOW_ID",
           "mode": "id"
         },
         "options": {

@@ -274,7 +274,7 @@
       "executeOnce": true,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "sKlDDC8SBcWishAf",
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
           "name": "Notion API"
         }
       }
@@ -393,7 +393,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "sKlDDC8SBcWishAf",
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
           "name": "Notion API"
         }
       }
@@ -423,7 +423,7 @@
       },
       "credentials": {
         "telegramApi": {
-          "id": "4upNbI1QSPqIcciI",
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
           "name": "Telegram \u2014 Image Eval Radar"
         }
       },

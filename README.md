@@ -169,10 +169,23 @@ query node pages, scaling page count with the window.
 **IF nodes apply strict type validation to `rightValue`** and reject `''`/undefined against
 a boolean operator. Replaced with a Code node that filters — no type checking at all.
 
+**Before you run this, set three ids for your own n8n instance.** The committed files
+carry placeholders, not working values:
+
+| Placeholder | Where | What to put there |
+|---|---|---|
+| `REPLACE_WITH_NOTION_CREDENTIAL_ID` | `build_workflow.py`, `workflow.json` | id of your Notion HTTP Header Auth credential |
+| `REPLACE_WITH_TELEGRAM_CREDENTIAL_ID` | `build_workflow.py`, `workflow-commands.json` | id of your Telegram bot credential |
+| `REPLACE_WITH_RADAR_WORKFLOW_ID` | `build_workflow.py` (`MAIN_WORKFLOW_ID`), `workflow-commands.json` | id n8n assigns the radar workflow after you import it |
+
+n8n credential ids are visible in the URL when you open a credential. The workflow id
+only exists after the first import, so import the radar first, then set the id, then
+regenerate and import the listener.
+
 **On import, n8n auto-binds an arbitrary existing credential of the right type,** and
 importing *as new* reassigns workflow ids. Once, that left `Run radar` pointing at the
-listener itself — an infinite self-call. Credential ids are pinned in the generator;
-re-check `MAIN_WORKFLOW_ID` after any import-as-new.
+listener itself, an infinite self-call. Re-check `MAIN_WORKFLOW_ID` after any
+import-as-new.
 
 **A Telegram node outputs its API response, not the item it received.** Chaining work after
 one drops your payload; branch in parallel from the node that produced the data.
